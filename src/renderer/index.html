@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https: data:; style-src 'self'; font-src 'self'">
+  <title>SLYTP</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo" title="Home">SL<span>YT</span>P</div>
+    <button id="back" class="iconbtn" title="Back" disabled></button>
+    <button id="homebtn" class="iconbtn homebtn" title="Home"></button>
+    <form id="go" class="searchbox">
+      <input id="q" type="text" placeholder="Search, or paste a video / channel URL or @handle" autofocus>
+      <button type="submit">Go</button>
+    </form>
+    <button id="guard" class="btn small" hidden title="SLYTP detected stutter and switched to safer playback settings. Click to go back to normal."></button>
+    <label class="qpref">Quality
+      <select id="pref">
+        <option value="ask">Ask each time</option>
+        <option value="2160">2160p</option>
+        <option value="1440">1440p</option>
+        <option value="1080">1080p</option>
+        <option value="720">720p</option>
+        <option value="480">480p</option>
+        <option value="360">360p</option>
+        <option value="240">240p</option>
+        <option value="0">Best</option>
+      </select>
+    </label>
+  </header>
+  <div class="layout">
+    <aside class="sidebar">
+      <ul id="homeitem"><li id="sidehome"></li></ul>
+      <h3 class="plhead">Playlists <button id="newpl" class="plus" title="New playlist"></button></h3>
+      <ul id="pls"></ul>
+      <h3>Favorites</h3>
+      <ul id="favs"></ul>
+      <p id="nofavs" class="muted">No favorites yet. Open a channel and press the star.</p>
+      <button id="depstatus" class="depstatus" title="Click to check for a yt-dlp update now"></button>
+    </aside>
+    <main>
+      <div id="chanhead" class="chanhead" hidden></div>
+      <div id="toolbar" class="toolbar" hidden></div>
+      <div id="status" class="muted"></div>
+      <div id="grid" class="grid"></div>
+      <div id="more" class="muted more" hidden></div>
+    </main>
+  </div>
+  <div id="opening" class="opening" hidden><div class="obox"><div class="spinner"></div><div>Opening in MPV…</div></div></div>
+  <div id="dl" class="dlbar" hidden></div>
+  <div id="modal" class="modal" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

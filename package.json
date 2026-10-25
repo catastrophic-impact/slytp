@@ -1,0 +1,39 @@
+{
+  "name": "slytp",
+  "version": "0.1.0",
+  "description": "Sign-in-free YouTube front end with favorite channels and quality selection, playing via MPV",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "dist": "electron-builder --linux AppImage"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^41.7.1",
+    "electron-builder": "^26.18.0"
+  },
+  "author": "superaudiogen",
+  "build": {
+    "appId": "local.slytp.app",
+    "productName": "SLYTP",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/yt-dlp_linux",
+        "to": "bin/yt-dlp"
+      }
+    ],
+    "linux": {
+      "target": "AppImage",
+      "category": "AudioVideo",
+      "artifactName": "SLYTP-${version}.AppImage"
+    },
+    "afterPack": "scripts/after-pack.js"
+  }
+}

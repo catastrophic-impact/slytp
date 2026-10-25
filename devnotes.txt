@@ -1,0 +1,168 @@
+SLYTP DEVNOTES  (keep updated; read this first if chat context is lost)
+======================================================================
+
+NAME: SLYTP = Simple Local YouTube Player (logo: SL<red YT>P)
+
+GOAL
+----
+Electron app = sign-in-free YouTube front end. Save favorite channels (sidebar),
+search / paste video or channel URLs, choose quality (2160/1440/1080/720/480/360/240/Best)
+and play via the host's MPV Flatpak:  flatpak run io.mpv.Mpv "<youtube url>"
+
+ENVIRONMENT
+-----------
+- Dev runs in distrobox "slytp-box" (ubuntu 22.04), custom HOME = ~/boxes/slytp
+  Created with:
+    distrobox create --yes --name slytp-box --image docker.io/library/ubuntu:22.04 --home /home/deck/boxes/slytp
+- Box provisioned by scripts/setup-box.sh (node 20, yt-dlp binary in /usr/local/bin, electron libs).
+- VS Code is a Flatpak, so host commands from its terminal need: flatpak-spawn --host ...
+- Project dir (/home/deck/Dev/vscode/slytp) is visible inside the box; the box's /tmp is NOT the host's /tmp.
+- Run the app:
+    distrobox enter slytp-box -- bash /home/deck/Dev/vscode/slytp/scripts/dev.sh
+  (npm start = "electron . --no-sandbox"; --no-sandbox needed because chrome-sandbox isn't suid)
+- Inside the box, MPV is launched via `distrobox-host-exec flatpak run io.mpv.Mpv`
+  (see mpvCommand() in src/main.js; handles box / vscode-flatpak / plain host).
+
+ARCHITECTURE
+------------
+- src/main.js      : Electron main. IPC: channel, search, video-info (yt-dlp -J), play (spawns MPV),
+                     favorites/prefs persisted as JSON in app.getPath('userData').
+- src/preload.js   : contextBridge -> window.api
+- src/renderer/    : index.html, style.css (dark theme), app.js (vanilla JS, DOM built w/o innerHTML)
+- Quality: MPV gets --ytdl-format=bestvideo[height<=?H]+bestaudio/best[height<=?H]; H=0 => no cap.
+  Pref "Ask each time" opens a dialog listing the heights available for that video.
+- Input box: @handle / channel URL -> channel page; watch/youtu.be URL -> quality dialog; else search.
+- Favorites: ☆ Favorite button on channel header, or in the quality dialog; sidebar lists them, ✕ removes.
+
+STATUS (2026-10-24)
+-------------------
+DONE
+- distrobox slytp-box created + provisioned; electron installed; app launches (no crash).
+- yt-dlp backend verified (channel listing, avatar, formats up to 2160p).
+- Host MPV flatpak reachable from the box via distrobox-host-exec.
+- Dark UI: top bar (search + quality pref), left favorites sidebar, video grid, quality dialog.
+
+- Home feed: on startup (and clicking the logo) shows newest videos across all favorites,
+  merged + sorted by date, from each channel's public RSS feed (no yt-dlp, no sign-in). Needs /channel/UC... urls
+  (favorites saved by the app already use that form).
+- AppImage: scripts/build.sh (run in the box) -> release/SLYTP-0.1.0.AppImage. Bundles standalone yt-dlp_linux
+  (resources/bin/yt-dlp), uses no-sandbox switch. Run on host: chmod +x and ./SLYTP-0.1.0.AppImage
+  (needs host flatpak with io.mpv.Mpv).
+
+- FIXED blank AppImage: Chromium sandbox crashed the renderer on the host (FATAL /dev/shm). app.commandLine
+  switch is too late and executableArgs only affects the .desktop file, so scripts/after-pack.js wraps the
+  electron binary in a launcher that passes --no-sandbox. Verified page loads (title SLYTP) via debug port.
+
+- Play flow: clicking a video shows a full-screen "Opening in MPV…" overlay that blocks all clicks until MPV
+  reports it opened (stdout VO:/AO:), exits with an error (dialog shows MPV's message), or 45s elapse.
+  MPV detection (src/main.js detectMpv): flatpak io.mpv.Mpv first, then native `mpv`; if neither, a dialog says
+  MPV is not detected and how to install (flatpak / apt / pacman / dnf). Tested valid + invalid video ids;
+  the "MPV missing" dialog path is untested.
+
+- Downloads (2026-10-24): quality dialog (also via the ⬇ button on each card) has "Download audio (best quality)"
+  (yt-dlp bestaudio, untouched m4a/opus, no re-encode) and "Download video" with a height picker (always bestvideo+bestaudio
+  merged, so it has sound). Native save dialog (main.js 'download' IPC); progress bar at bottom (#dl).
+  Merging needs ffmpeg: main.js ffmpegArgs() uses resources/bin/ffmpeg (AppImage) > build/ffmpeg (dev) > ffmpeg on PATH.
+  The box has NO ffmpeg and none is bundled yet (static build download was blocked) -> video merge untested; audio needs no ffmpeg.
+
+- Portable data: userData = ./config next to the AppImage (APPIMAGE env) or project/config in dev. Nothing in ~/.config.
+
+- Download formats: audio Original|mp3|ogg(vorbis)|opus|m4a|flac|wav (conversion needs ffmpeg); video mp4|mkv|webm.
+
+UPDATE 2026-10-25 (UI/playback pass)
+------------------------------------
+- Navigation: ← Back button + Home button (top bar), Home entry in sidebar, logo = Home. Every navigation has a token
+  (navId in app.js) so a slow response from an earlier view can never overwrite the current one (the old "videos stop
+  loading after clicking the logo" bug). History stack holds the last 50 views.
+- Cache: main.js writes config/cache.json (Home feed + each channel, max 40 entries). Cached lists show instantly; if older
+  than 10 min (FRESH_MS) they refresh in the background. "Sync" button forces a refresh. If refresh fails, cached results stay.
+  yt-dlp calls retry once. Chromium's HTTP cache is cleared at startup (stale style.css/app.js bug).
+- Cards: click ALWAYS opens the Play/Download dialog. Top-bar quality is preselected; if the video lacks it, the closest lower
+  quality is preselected with a note. ⓘ button on each card opens an info window (thumb, channel, upload date, views, likes,
+  duration, link, description, Copy link, Open in browser, Play/Download…). ☆ next to the channel name on every card favorites
+  the channel without opening the video (avatar fetched in background).
+- Icons are inline SVG and the UI font (Inter, OFL) is bundled in src/renderer/fonts, so nothing depends on host fonts.
+- PLAYBACK GUARDRAILS (main.js ytdlFormat/mpvTuning/'play'): root cause of the stutter on e.g. YaXnmR68Zpc was that
+  bestvideo[height<=?720] picked AV1 (no hw decode on Steam Deck) and, on other videos, a ~4x-bitrate HLS (m3u8) copy of the
+  same resolution. Now: resolve the exact height from video-info, prefer H.264 over plain HTTPS (no m3u8), then VP9, AV1 last;
+  --hwdec=auto-safe, bigger cache, --cache-pause-initial.
+  Adaptive: MPV's status line (--term-status-msg SLSTAT) is parsed; if a >=20s session had >=2 cache stalls or heavy dropped
+  frames, config/guard.json level goes 0->1->2 (1: prefer <=30fps + larger buffer; 2: also skip loop filter/fast decode).
+  UI shows "Smooth playback on · reset" in the top bar while level>0; click to reset.
+- Test notes: run the app with `npx electron . --no-sandbox --remote-debugging-port=9333` in the box and drive it over CDP
+  (node --experimental-websocket). Kill leftovers with pgrep -f "dist/electron" (npx wrapper kill is not enough).
+- Not yet verified: guard level escalation after a real stutter session; "MPV missing" dialog.
+
+UPDATE 2026-10-25 (managed helper binaries)
+-------------------------------------------
+- src/deps.js (plain node, no electron imports) manages <config>/bin next to the AppImage (project config/bin in dev):
+  * yt-dlp: AppImage still carries a seed copy (resources/bin/yt-dlp) that is copied to config/bin/yt-dlp on first launch.
+    On every launch (max once per 24h, state in config/bin/deps.json) it asks GitHub for the latest release, downloads
+    yt-dlp_linux, verifies SHA2-256SUMS, runs --version on it, then atomically replaces the managed copy. Failure keeps the old one.
+    Sidebar footer shows status (green ok / yellow checking-updating / red error); click = force check now.
+  * ffmpeg + ffprobe: NOT bundled. Downloaded on demand when a video download or audio conversion needs them (dialog offers it).
+    Source 1 johnvansickle static (42MB dl, md5 verified), fallback yt-dlp/FFmpeg-Builds (sha256). ~160MB on disk in config/bin.
+    Lookup order: config/bin > resources/bin > build/ffmpeg > PATH.
+- LIMITATION: the MPV *Flatpak* sandbox gets HTTP 403 when pointed at our standalone yt-dlp (ytdl_path), while its own built-in
+  yt-dlp works. So Flatpak MPV keeps using its own yt-dlp (updated via `flatpak update`); our managed yt-dlp serves SLYTP's own
+  listing/info/downloads and a native mpv (ytdl_path is passed only for native mpv).
+- Top bar order is now: logo, back, home, search.
+
+NOT YET VERIFIED / TODO
+- Visual check of UI by user; end-to-end click-to-play in MPV.
+- Dev mode (box) still uses python yt-dlp (3.10 deprecation warning); AppImage uses the standalone build.
+- AppImage uses default Electron icon; add an icon + desktopName.
+- JS RUNTIME (yt-dlp) [NOT an issue per user, everything works; only revisit if quality/playback breaks]: current yt-dlp needs an external JS runtime (deno default; node/bun/quickjs via
+  --js-runtimes) to solve YouTube player challenges. Not configured anywhere. Works today (formats up to 2160p
+  seen), but may cap quality/fail later. Affects (1) our yt-dlp calls (AppImage bundle has no runtime; box has node
+  but needs --js-runtimes node) and (2) MPV flatpak's own bundled yt-dlp. Fix idea: bundle deno, pass it to yt-dlp.
+- Quality = real YouTube streams chosen via MPV --ytdl-format height cap (no download, no ffmpeg scaling).
+- Ideas: infinite scroll/pagination, channel "Latest uploads" feed across all favorites,
+  favorites reorder, watch history, packaging (electron-builder / AppImage), yt-dlp auto-update.
+
+UPDATE 2026-10-25 (audio-only play)
+-----------------------------------
+- Play/Download dialog has "Play audio only" next to Play. IPC 'play' takes {id, height, audio}. audio=true: MPV gets
+  --ytdl-format=ba/b (no video bytes), --external-file=<thumbnail> (maxresdefault, fallback hqdefault) with --vid=1,
+  --force-window=immediate, --image-display-duration=inf. So MPV shows the still thumbnail while streaming only audio.
+  Verified the MPV args by hand (flatpak MPV: opus audio + 480x360 jpg as the picture). The guard (stutter) logic is skipped for audio.
+  Window opens with --force-window=yes (NOT immediate): immediate showed a black MPV window while yt-dlp resolved the stream;
+  now the SLYTP "Opening in MPV..." overlay covers the wait and MPV's window appears with the thumbnail already in it.
+  Data check (20s, same cache settings, host net counters): audio-only ~2.5 MB vs 720p+audio ~7.3 MB (both include ~1-2 MB
+  fixed extraction overhead). Audio mode's track list has no Video track, only the thumbnail image.
+  Not yet verified: clicking the button in the running Electron app.
+- Opening-in-MPV overlay now shows spinner + text inside a solid panel card (.obox) over the dimmed backdrop.
+- Channel infinite scroll (2026-10-25): channel view loads the newest 48 (PAGE in main.js); a bottom marker (#more, IntersectionObserver
+  on <main>) fetches the next 48 via IPC 'channel-more' (yt-dlp --playlist-items a:b) and appends cards. Each page is appended to the
+  cached channel entry in config/cache.json ({channel, videos, done}), so reopening shows everything loaded so far instantly. A refresh
+  re-fetches page 1 and keeps older cached videos. Verified yt-dlp paging works at depth (items 5000+ on a big channel).
+  Not yet verified in the running app: the scroll trigger itself. Cache keeps 40 entries max (LRU by time).
+- Play/Download dialog subtitle now reads "Uploaded N days ago" (the info window still shows full date + ago).
+- Home infinite scroll (2026-10-25): same bottom marker/IntersectionObserver as channels (app.js setupMore/loadMore take a fetch fn). IPC 'feed-more'
+  pages every favorite through yt-dlp (24 per channel per call, 4 at a time, cursors per channel in cache 'home'.cursors) with
+  --extractor-args youtubetab:approximate_date (flat listings carry no dates; approximate = day-level recent, coarser older). Each batch is
+  sorted newest-first and appended; the RSS refresh ('feed') keeps already-loaded older videos. Verified over CDP in dev: 31 -> 144 videos in
+  3 scrolls (ages 1 week -> 2 months). Order between batches is approximate: a quiet channel's old video can appear before a busy channel's.
+
+UPDATE 2026-10-25 (playlists = favorite videos)
+-----------------------------------------------
+- Playlists stored in config/playlists.json ([{id,name,videos:[{id,title,thumb,duration,views,channel,channelUrl,published}]}]) via IPC
+  playlists:get/set; renderer keeps state.playlists. Sidebar "Playlists" section (+ creates one) above Favorites; view type 'playlist'
+  (view.url = playlist id) with Play all / Rename / Delete in the toolbar. Bookmark button top-left on every card (filled when the
+  video is in any playlist) and "Add to playlist" in the Play/Download dialog open a picker: click a playlist to add (click again to
+  remove) or New playlist. In a playlist view the card's top-left button removes the video from that playlist.
+- Play all: ONE MPV queue (IPC 'play' with ids[]; < and > skip). Resolution differences are handled by a CAP format (ytdlFormatCap,
+  height<=H, each entry resolves its own best <= cap), not the exact-height format used for single plays. Audio-only queue: per-entry
+  thumbnail via mpv file-local groups `--{ --external-file=<thumb> <url> --}` (+ global --vid=1). Stutter guard is skipped for queues.
+- Verified in dev over CDP: create playlist, add 2 videos, sidebar count, playlist view, Play all audio-only launched MPV with both
+  entries + thumbnails. Not verified visually: video-mode queue playback and MPV skipping between entries.
+- Gotcha: arr.map(cardEl) passes the index as 2nd arg; always call cardEl(v).
+- Test hygiene: pkill -f "pattern" from `sh -c` kills itself; use "[n]ode_modules/electron/dist/electron" style patterns.
+
+UPDATE 2026-10-25 (search paging, session-only cache)
+-----------------------------------------------------
+- Search now infinite-scrolls like channels/Home: IPC 'search' (q, offset) -> {videos, done}; 30 per page, max 300 results
+  (yt-dlp ytsearch has no offset, so it asks for offset+30 and slices with --playlist-items; pages get slower deeper in). Renderer
+  drops repeated ids across pages. Verified over CDP: 30/60/90/120 cards after scrolling.
+- config/cache.json is deleted at every app launch (main.js whenReady). Cache is session-only now (10-min FRESH_MS logic still
+  applies inside a session). favorites.json, playlists.json, prefs.json, guard.json and config/bin are NOT touched.
