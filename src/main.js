@@ -176,7 +176,7 @@ ipcMain.handle('feed', async (_e, favs) => {
   const old = cacheGet('home')?.value;
   const same = old && old.sig === feedSig(favs);
   const ids = new Set(videos.map((v) => v.id));
-  const all = same ? [...videos, ...old.videos.filter((v) => !ids.has(v.id))] : videos;
+  const all = (same ? [...videos, ...old.videos.filter((v) => !ids.has(v.id))] : videos).sort((a, b) => b.published - a.published);
   const value = { sig: feedSig(favs), videos: all, cursors: same ? old.cursors || {} : {}, done: same ? !!old.done : false };
   cacheSet('home', value);
   return { at: Date.now(), videos: all, done: value.done };
@@ -216,8 +216,9 @@ ipcMain.handle('feed-more', async (_e, favs) => {
   if (failed === todo.length) throw new Error('Could not reach YouTube.');
   const fresh = batches.flat().filter((v) => v.id && !ids.has(v.id)).sort((a, b) => b.published - a.published);
   const done = favs.every((f) => cursors[f.url]?.done);
-  cacheSet('home', { ...val, videos: [...val.videos, ...fresh], cursors, done });
-  return { videos: fresh, done };
+  // Fresh videos can be newer than the current tail (e.g. a just-added favorite), so keep the whole list in date order.
+  cacheSet('home', { ...val, videos: [...val.videos, ...fresh].sort((a, b) => b.published - a.published), cursors, done });
+  return { videos: fresh, done, sorted: true };
 });
 
 // Search pages: yt-dlp has no offset for ytsearch, so ask for offset+PAGE results and keep the last PAGE (capped at SEARCH_MAX).

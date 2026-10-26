@@ -141,7 +141,7 @@ UPDATE 2026-10-25 (audio-only play)
 - Home infinite scroll (2026-10-25): same bottom marker/IntersectionObserver as channels (app.js setupMore/loadMore take a fetch fn). IPC 'feed-more'
   pages every favorite through yt-dlp (24 per channel per call, 4 at a time, cursors per channel in cache 'home'.cursors) with
   --extractor-args youtubetab:approximate_date (flat listings carry no dates; approximate = day-level recent, coarser older). Each batch is
-  sorted newest-first and appended; the RSS refresh ('feed') keeps already-loaded older videos. Verified over CDP in dev: 31 -> 144 videos in
+  sorted newest-first (see 2026-10-26 fix: now merged by date); the RSS refresh ('feed') keeps already-loaded older videos. Verified over CDP in dev: 31 -> 144 videos in
   3 scrolls (ages 1 week -> 2 months). Order between batches is approximate: a quiet channel's old video can appear before a busy channel's.
 
 UPDATE 2026-10-25 (playlists = favorite videos)
@@ -166,3 +166,15 @@ UPDATE 2026-10-25 (search paging, session-only cache)
   drops repeated ids across pages. Verified over CDP: 30/60/90/120 cards after scrolling.
 - config/cache.json is deleted at every app launch (main.js whenReady). Cache is session-only now (10-min FRESH_MS logic still
   applies inside a session). favorites.json, playlists.json, prefs.json, guard.json and config/bin are NOT touched.
+
+UPDATE 2026-10-26 (v1.0.1: Home date order)
+-------------------------------------------
+- BUG FIXED: adding a favorite reset Home paging, and feed-more APPENDED each batch, so videos newer than the list tail landed at
+  the bottom (out of order). Now main.js keeps cache 'home' sorted by published after every 'feed' and 'feed-more'; feed-more returns
+  {videos, done, sorted:true} and app.js loadMore slots each card into place by data-pub (set on every .card) instead of appending.
+- Verified in dev over CDP: 2 favs + added a 3rd, 5 scrolls (30 -> 370 cards): 0 order violations. Approximate dates still interleave
+  within the same day/period.
+- Version bumped to 1.0.1 (package.json); AppImage = release/SLYTP-1.0.1.AppImage.
+- changes.txt now tracks per-version tldr bullets.
+- Test hygiene: scripts for the box must live in the project dir (box /tmp != host /tmp); from VS Code use
+  `flatpak-spawn --host distrobox enter slytp-box -- ...`.

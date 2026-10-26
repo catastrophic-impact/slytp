@@ -1,6 +1,6 @@
 {
   "name": "slytp",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Sign-in-free YouTube front end with favorite channels and quality selection, playing via MPV",
   "main": "src/main.js",
   "scripts": {

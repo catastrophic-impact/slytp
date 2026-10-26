@@ -1,0 +1,7 @@
+SLYTP CHANGES
+=============
+1.0.1 (2026-10-26)
+- Fix: Home feed now stays in date order after adding a favorite / scrolling (new videos no longer appended out of order).
+
+0.1.0
+- Initial release: favorites, Home feed, search, channel/Home infinite scroll, playlists, MPV play, downloads, portable AppImage.

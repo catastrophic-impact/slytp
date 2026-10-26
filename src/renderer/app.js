@@ -224,7 +224,7 @@ function openPlayAll(pl) {
 function goBackOrHome() { if (hist.length) goBack(); else goHome(); }
 
 // ---------- grid ----------
-const cardEl = (v, pl = null) => h('div', { class: 'card', onclick: () => openQualityDialog(v.id, v) },
+const cardEl = (v, pl = null) => h('div', { class: 'card', 'data-pub': v.published || 0, onclick: () => openQualityDialog(v.id, v) },
     h('div', { class: 'th' }, h('img', { src: v.thumb, loading: 'lazy' }),
       pl ? h('button', { class: 'cbtn left', title: 'Remove from this playlist', onclick: (e) => { e.stopPropagation(); removeFromPlaylist(pl, v.id); } }, icon('close', { sm: true }))
          : h('button', { class: 'cbtn left' + (inAnyPlaylist(v.id) ? ' on' : ''), 'data-vid': v.id, title: 'Add to playlist', onclick: (e) => { e.stopPropagation(); openPlaylistPicker(v); } }, icon('bookmark', { sm: true })),
@@ -259,7 +259,15 @@ async function loadMore() {
   try {
     const r = await more.fetch();
     if (tok !== more.token) return;
-    $('#grid').append(...r.videos.map((v) => cardEl(v))); refreshStars();
+    if (r.sorted) { // Home: slot each card into date order rather than appending
+      const grid = $('#grid');
+      for (const v of r.videos) {
+        const card = cardEl(v), pub = v.published || 0;
+        const next = [...grid.children].find((c) => Number(c.dataset.pub) < pub);
+        grid.insertBefore(card, next || null);
+      }
+    } else $('#grid').append(...r.videos.map((v) => cardEl(v)));
+    refreshStars();
     if (r.done) { more.obs?.disconnect(); el.hidden = true; return; }
     // the marker may still be on screen (tall window): re-observe so the next page is requested right away
     more.obs.unobserve(el); more.obs.observe(el);
